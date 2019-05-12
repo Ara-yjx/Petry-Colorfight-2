@@ -1,14 +1,14 @@
 from colorfight import Colorfight
 import random
 import math
-from colorfight.constants import BLD_GOLD_MINE, BLD_ENERGY_WELL, BLD_FORTRESS
+from colorfight.constants import BLD_GOLD_MINE, BLD_ENERGY_WELL, BLD_FORTRESS, BLD_HOME
 from colorfight.constants import GAME_WIDTH, GAME_HEIGHT
 
 
 def ai_petry(game, param):
     # debug: 10 steps
 
-    options = []
+    # options = []
     cmd_list = []
 
     """
@@ -31,6 +31,7 @@ def ai_petry(game, param):
 
 
     # home
+    game.home_cell = None
     for cell in game.me.cells.values():
         if cell.building.is_home:
             game.home_cell = cell
@@ -105,6 +106,8 @@ def atk_reward(c, game, param):
     c.far_friend * _far_friend) \
     * shift_atan(game.turn, _atk_time) * _atk_priority
     
+    
+
     return reward
     
 
@@ -115,13 +118,20 @@ def build_reward(c, game, param):
     _build_energy = param[10]
     _build_close_friend = param[11]
     _build_far_friend = param[12]
-    _build_time = param[13]
-    _build_priority = param[14]
+    _build_gold_time = param[13]
+    _build_energy_time = param[14]
+    _upgrade_time = param[15]
+    _build_priority = param[16]
 
+
+    
     # If no building
     if(c.building.name == 'empty'):
-        gold_reward = c.natural_gold * _build_gold
-        energy_reward = c.natural_energy * _build_energy
+        gold_reward = c.natural_gold * _build_gold * shift_atan(game.turn, _build_gold_time)
+        energy_reward = c.natural_energy * _build_energy * shift_atan(game.turn, _build_energy_time)
+        if random.random() < 0:
+            gold_reward = math.inf
+
         # fortress_reward = _build_fortress
         # Don't build fortress
         if gold_reward > energy_reward: 
@@ -138,14 +148,15 @@ def build_reward(c, game, param):
 
     # Upgrade
     else:
-        build_reward = 1
+        
+        build_reward = shift_atan(game.turn, _upgrade_time)
         cmd = game.upgrade(c.position)
         cost = (c.building.upgrade_energy, c.building.upgrade_gold)
 
     reward = build_reward * ( \
     c.close_friend * _build_close_friend + \
     c.far_friend * _build_far_friend) * \
-    shift_atan(game.turn, _build_time) * _build_priority
+    _build_priority * (1+random.random()/2)
 
     
     return cmd, reward, cost
@@ -153,19 +164,41 @@ def build_reward(c, game, param):
 
 def first(game):
     cmd_list = []
-    if game.turn > 100 and game.home_cell.building.can_upgrade:
-        cmd_list.append((game.upgrade(game.home_cell.position), math.inf, \
-        game.home_cell.building.upgrade_energy, game.home_cell.building.upgrade_gold))
+   
+    # Wandering Petry
+    if not game.home_cell:
+        safeCell = None
+        safety = 0
+
+        for cell in game.me.cells.values():
+            this_safety = 0
+            for dcx in range(-3, 4):
+                cx = cell.position.x + dcx
+                for dcy in range(-abs(dcx), abs(dcx)):
+                    cy = cell.position.y + dcy
+                    if 0 <= cx < GAME_WIDTH and 0 <= cy < GAME_HEIGHT and game.game_map[cx, cy].owner == game.me.uid:
+                        this_safety += 1
+            if this_safety >= safety:
+                safeCell = cell
+        if safeCell:
+            cmd_list.append((game.build(safeCell.position, BLD_HOME), math.inf, (0,0))) # wrong cost
+        
+    else:
+    # Upgrade home
+        if game.turn > 100 and game.home_cell.building.can_upgrade:
+            cmd_list.append((game.upgrade(game.home_cell.position), math.inf, \
+            game.home_cell.building.upgrade_energy, game.home_cell.building.upgrade_gold))  
     
-    """
-    for dcx in range(-3, 4):
-        cx = game.home_cell.position.x + dcx
-        for dcy in range(-abs(dcx), abs(dcx)):
-            cy = game.home_cell.position.y + dcy
-            # Enemy!
-            if 0 <= cx < GAME_WIDTH and 0 <= cy < GAME_HEIGHT and game.game_map[cx, cy].owner != game.me.uid and game.game_map[cx, cy].owner != 0:
-                pass
-    """
+    
+    
+        for dcx in range(-3, 4):
+            cx = game.home_cell.position.x + dcx
+            for dcy in range(-abs(dcx), abs(dcx)):
+                cy = game.home_cell.position.y + dcy
+                # Enemy!
+                if 0 <= cx < GAME_WIDTH and 0 <= cy < GAME_HEIGHT and game.game_map[cx, cy].owner != game.me.uid and game.game_map[cx, cy].owner != 0:
+                    pass
+    
     return cmd_list
 
 
